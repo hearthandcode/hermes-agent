@@ -43,6 +43,7 @@ from hermes_cli.profiles import (
     has_bundled_skills_opt_out,
     NO_BUNDLED_SKILLS_MARKER,
     backfill_profile_envs,
+    build_profile_catalog,
     profiles_to_serve,
 )
 from hermes_cli.config import DEFAULT_CONFIG
@@ -77,6 +78,78 @@ class TestNormalizeProfileName:
     def test_title_case_normalized(self):
         assert normalize_profile_name("Jules") == "jules"
         assert normalize_profile_name("  Librarian ") == "librarian"
+
+
+class TestBuildProfileCatalog:
+    def test_emits_versioned_non_secret_contract(self, tmp_path):
+        profile = profiles.ProfileInfo(
+            name="technographus",
+            path=tmp_path / "profiles" / "technographus",
+            is_default=False,
+            gateway_running=True,
+            model="gpt-test",
+            provider="test-provider",
+            has_env=True,
+            skill_count=3,
+            alias_path=tmp_path / "bin" / "tech",
+            alias_name="tech",
+            distribution_name="builders",
+            distribution_version="1.2.0",
+            distribution_source="/private/local/source",
+            description="Builds reviewed skill candidates.",
+            description_auto=False,
+        )
+
+        catalog = build_profile_catalog([profile], active_profile="technographus")
+
+        assert catalog["contract_version"] == 1
+        assert catalog["active_profile"] == "technographus"
+        assert catalog["profiles"] == [{
+            "id": "technographus",
+            "is_default": False,
+            "is_active": True,
+            "description": {
+                "text": "Builds reviewed skill candidates.",
+                "provenance": "user",
+            },
+            "model": {"id": "gpt-test", "provider": "test-provider"},
+            "installed_skill_count": 3,
+            "dedicated_gateway_running": True,
+            "alias": "tech",
+            "distribution": {"name": "builders", "version": "1.2.0"},
+        }]
+        rendered = json.dumps(catalog)
+        assert str(profile.path) not in rendered
+        assert profile.distribution_source is not None
+        assert profile.distribution_source not in rendered
+        assert "has_env" not in rendered
+
+    def test_marks_missing_and_auto_descriptions(self, tmp_path):
+        missing = profiles.ProfileInfo(
+            name="default",
+            path=tmp_path,
+            is_default=True,
+            gateway_running=False,
+        )
+        generated = profiles.ProfileInfo(
+            name="prosopographus",
+            path=tmp_path / "prosopographus",
+            is_default=False,
+            gateway_running=False,
+            description="Maps profile capabilities.",
+            description_auto=True,
+        )
+
+        records = build_profile_catalog(
+            [missing, generated], active_profile="default"
+        )["profiles"]
+
+        assert records[0]["description"] == {
+            "text": None,
+            "provenance": "missing",
+        }
+        assert records[0]["model"] == {"id": None, "provider": None}
+        assert records[1]["description"]["provenance"] == "auto"
 
 
 class TestValidateProfileName:

@@ -30,11 +30,13 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from agent.skill_utils import is_excluded_skill_path
 
 _PROFILE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+
+PROFILE_CATALOG_CONTRACT_VERSION = 1
 
 # Directories bootstrapped inside every new profile
 _PROFILE_DIRS = [
@@ -945,6 +947,67 @@ def list_profiles() -> List[ProfileInfo]:
             ))
 
     return profiles
+
+
+def build_profile_catalog(
+    profiles: Optional[List[ProfileInfo]] = None,
+    *,
+    active_profile: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Return the versioned, non-secret machine contract for profile discovery.
+
+    The catalog deliberately omits profile paths, credential-file presence,
+    distribution sources, and other local implementation details. Consumers
+    may present these records as externally owned profiles, but must not infer
+    that Hermes has granted process, configuration, or deletion authority.
+    """
+    if profiles is None:
+        profiles = list_profiles()
+    if active_profile is None:
+        active_profile = get_active_profile_name() or "default"
+
+    records: List[Dict[str, Any]] = []
+    for profile in profiles:
+        description_text = (profile.description or "").strip()
+        if not description_text:
+            description_provenance = "missing"
+        elif profile.description_auto:
+            description_provenance = "auto"
+        else:
+            description_provenance = "user"
+
+        # Keep the v1 shape stable even when a profile has no configured model.
+        # Consumers can decode one object with nullable fields instead of
+        # branching between an object and null.
+        model = {"id": profile.model, "provider": profile.provider}
+
+        distribution = None
+        if profile.distribution_name or profile.distribution_version:
+            distribution = {
+                "name": profile.distribution_name,
+                "version": profile.distribution_version,
+            }
+
+        records.append({
+            "id": profile.name,
+            "is_default": profile.is_default,
+            "is_active": profile.name == active_profile,
+            "description": {
+                "text": description_text or None,
+                "provenance": description_provenance,
+            },
+            "model": model,
+            "installed_skill_count": profile.skill_count,
+            "dedicated_gateway_running": profile.gateway_running,
+            "alias": profile.alias_name if profile.alias_path else None,
+            "distribution": distribution,
+        })
+
+    return {
+        "contract_version": PROFILE_CATALOG_CONTRACT_VERSION,
+        "active_profile": active_profile,
+        "profiles": records,
+    }
 
 
 def profiles_to_serve(multiplex: bool) -> List[Tuple[str, Path]]:

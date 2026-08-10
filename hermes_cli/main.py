@@ -9193,6 +9193,7 @@ def _coalesce_session_name_args(argv: list) -> list:
 def cmd_profile(args):
     """Profile management — create, delete, list, switch, alias."""
     from hermes_cli.profiles import (
+        build_profile_catalog,
         list_profiles,
         create_profile,
         delete_profile,
@@ -9238,6 +9239,14 @@ def cmd_profile(args):
     if action == "list":
         profiles = list_profiles()
         active = get_active_profile_name()
+
+        if getattr(args, "json", False):
+            print(json.dumps(
+                build_profile_catalog(profiles, active_profile=active),
+                indent=2,
+                sort_keys=True,
+            ))
+            return
 
         if not profiles:
             print("No profiles found.")

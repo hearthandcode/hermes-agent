@@ -35,6 +35,15 @@ def _profile_parser():
     return p
 
 
+def test_profile_list_json_flag():
+    args = _profile_parser().parse_args(["profile", "list", "--json"])
+
+    assert args.command == "profile"
+    assert args.profile_action == "list"
+    assert args.json is True
+    assert args.func is _h_profile
+
+
 def _gateway_parser():
     p = argparse.ArgumentParser(prog="hermes")
     sub = p.add_subparsers(dest="command")
